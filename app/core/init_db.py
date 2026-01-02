@@ -11,8 +11,11 @@ def init_db():
     with Session(engine) as session:
         # Check if data already exists
         from app.models.gate import Gate
-        if session.query(Gate).first():
-            return
+        try:
+            if session.query(Gate).first():
+                return
+        except Exception:
+            pass
         
         print("Initializing database with sample data...")
         create_db_and_tables()
