@@ -41,4 +41,16 @@ async def list_vehicles(session: Session = Depends(get_session), user: SecurityS
 @router.get("/alerts", response_model=SuccessResponse)
 async def list_alerts(page: int = 1, limit: int = 20, alertType: str = None, resolved: bool = None, session: Session = Depends(get_session), user: SecurityStaff = Depends(AuthService.get_current_user)):
     alerts, pagination = VehicleAlertService.list_alerts(session, page, limit, alertType, resolved)
-    return {"status": "success", "data": {"alerts": [a.model_dump() for a in alerts], "pagination": pagination.model_dump()}}
+    data = []
+    for a in alerts:
+        data.append({
+            "id": a.id,
+            "licensePlate": a.license_plate,
+            "timestamp": a.timestamp,
+            "alertType": a.alert_type.value if hasattr(a.alert_type, 'value') else a.alert_type,
+            "gateId": a.gate_id,
+            "resolved": a.resolved,
+            "resolvedAt": a.resolved_at,
+            "notes": a.resolution_notes
+        })
+    return {"status": "success", "data": {"alerts": data, "pagination": pagination.model_dump()}}
