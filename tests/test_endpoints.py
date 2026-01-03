@@ -1,4 +1,5 @@
 import pytest
+import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
@@ -248,3 +249,88 @@ def test_violations_and_resolution(client, auth_token):
     )
     assert response.status_code == 200
     assert response.json()["data"]["resolved"] == True
+
+def test_websocket_violation_broadcast(client):
+    with client.websocket_connect("/ws/alerts") as websocket:
+        # Trigger an unauthorized QR scan violation
+        response = client.post(
+            "/api/v1/scan/qr",
+            json={
+                "qrCode": "INVALID-QR-CODE-BROADCAST",
+                "gateId": "gate_main_entrance",
+                "scanTimestamp": datetime.utcnow().isoformat()
+            }
+        )
+        assert response.status_code == 200
+        
+        # Check if we received the broadcast
+        data = websocket.receive_text()
+        message = json.loads(data)
+        
+        assert message["type"] == "violation_alert"
+        assert message["data"]["scannedQrCode"] == "INVALID-QR-CODE-BROADCAST"
+        assert message["data"]["type"] == "unauthorized_qr_scan"
+
+def test_websocket_vehicle_alert_broadcast(client):
+    with client.websocket_connect("/ws/alerts") as websocket:
+        # Trigger an unregistered vehicle entry alert
+        response = client.post(
+            "/api/v1/vehicles/entry",
+            json={
+                "licensePlate": "UNREG-BROADCAST",
+                "gateId": "gate_main_entrance",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+        assert response.status_code == 200
+        
+        # Check if we received the broadcast
+        data = websocket.receive_text()
+        message = json.loads(data)
+        
+        assert message["type"] == "vehicle_alert"
+        assert message["data"]["plate"] == "UNREG-BROADCAST"
+
+def test_websocket_expired_visitor_broadcast(client, session):
+    # 1. Manually insert an expired visitor into the DB bypassing service validation
+    from app.models.visitor import Visitor
+    from app.models.staff import StaffMember
+    from app.models.security_staff import SecurityStaff
+    
+    staff = session.exec(select(StaffMember)).first()
+    sec_staff = session.exec(select(SecurityStaff)).first()
+    
+    visitor = Visitor(
+        id="test-expired-visitor",
+        name="Expired Visitor",
+        email="expired@visitor.com",
+        purpose="Test Expired",
+        host_staff_id=staff.id,
+        qr_code="QR-EXP-123456",
+        valid_from=datetime.utcnow() - timedelta(days=2),
+        valid_until=datetime.utcnow() - timedelta(minutes=5),
+        allowed_gates=json.dumps(["gate_main_entrance"]),
+        created_by_staff_id=sec_staff.id
+    )
+    session.add(visitor)
+    session.commit()
+    
+    with client.websocket_connect("/ws/alerts") as websocket:
+        # 2. Scan the expired visitor QR
+        response = client.post(
+            "/api/v1/scan/qr",
+            json={
+                "qrCode": "QR-EXP-123456",
+                "gateId": "gate_main_entrance",
+                "scanTimestamp": datetime.utcnow().isoformat()
+            }
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["violationType"] == "expired_visitor_qr_code"
+        
+        # 3. Check broadcast
+        data = websocket.receive_text()
+        message = json.loads(data)
+        assert message["type"] == "violation_alert"
+        assert message["data"]["type"] == "expired_visitor_qr_code"
+        assert message["data"]["visitorName"] == "Expired Visitor"
