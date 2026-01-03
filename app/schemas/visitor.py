@@ -16,6 +16,7 @@ class CreateVisitorPassRequest(BaseModel):
     visitorName: str
     visitorEmail: Optional[EmailStr] = None
     visitorPhone: Optional[str] = None
+    visitorPhoto: Optional[str] = None  # Base64 encoded image or URL
     purpose: str
     hostEmployeeId: str
     validFrom: datetime
@@ -47,6 +48,7 @@ class VisitorPassResponse(BaseModel):
     visitorName: str
     visitorEmail: Optional[str]
     visitorPhone: Optional[str]
+    visitorPhoto: Optional[str]  # Photo URL or base64
     purpose: str
     host: HostInfo
     validFrom: datetime

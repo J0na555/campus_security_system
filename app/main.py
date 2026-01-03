@@ -15,8 +15,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan)
 
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
@@ -33,14 +36,6 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  
-    allow_credentials=False, 
-    allow_methods=["*"], 
-    allow_headers=["*"],  
-)
 
 if __name__ == "__main__":
     import uvicorn

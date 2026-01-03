@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from sqlmodel import Session, select
 from fastapi import HTTPException, status
@@ -20,6 +20,7 @@ class VisitorService:
         visitor = Visitor(
             id=visitor_id, name=pass_data.visitorName, email=pass_data.visitorEmail,
             phone=pass_data.visitorPhone, purpose=pass_data.purpose,
+            photo_url=pass_data.visitorPhoto,  # Save the visitor photo
             host_staff_id=pass_data.hostEmployeeId, qr_code=qr_code,
             valid_from=pass_data.validFrom, valid_until=pass_data.validUntil,
             allowed_gates=json.dumps(pass_data.allowedGates) if pass_data.allowedGates else None,
@@ -33,17 +34,22 @@ class VisitorService:
     @staticmethod
     def _validate_pass_data(session: Session, data: CreateVisitorPassRequest):
         errors = []
+        utc_now = datetime.now(timezone.utc)  # Use timezone-aware datetime
+
         if data.validUntil <= data.validFrom:
             errors.append({"field": "validUntil", "message": "End time must be after start time"})
-        if data.validFrom < datetime.utcnow() - timedelta(hours=1):
+        
+        if data.validFrom < utc_now - timedelta(hours=1):
             errors.append({"field": "validFrom", "message": "Start time must be recent or future"})
+        
         if data.validUntil - data.validFrom > timedelta(hours=24):
             errors.append({"field": "validUntil", "message": "Max duration 24h"})
-        
+
         host = session.exec(select(StaffMember).where(StaffMember.id == data.hostEmployeeId)).first()
+
         if not host or host.employment_status.value != "active":
             errors.append({"field": "hostEmployeeId", "message": "Invalid or inactive host"})
-            
+        
         if errors:
             raise HTTPException(status_code=400, detail={"status": "error", "code": "VALIDATION_ERROR", "details": errors})
 
@@ -66,8 +72,8 @@ class VisitorService:
 
         return VisitorPassResponse(
             passId=visitor.id, visitorName=visitor.name, visitorEmail=visitor.email,
-            visitorPhone=visitor.phone, purpose=visitor.purpose, host=host_info,
-            validFrom=visitor.valid_from, validUntil=visitor.valid_until,
+            visitorPhone=visitor.phone, visitorPhoto=visitor.photo_url, purpose=visitor.purpose, 
+            host=host_info, validFrom=visitor.valid_from, validUntil=visitor.valid_until,
             allowedGates=gates_info, createdAt=visitor.created_at,
             qrCode=QRCodeInfo(content=qr_code, imageUrl="", imageBase64=""),
             createdBy=CreatedByInfo(id=user.id, name=user.name)
@@ -75,4 +81,6 @@ class VisitorService:
 
     @staticmethod
     def list_passes(session: Session):
-        return session.exec(select(Visitor).order_by(Visitor.created_at.desc())).all()
+        # Simple query - relationships will be loaded lazily while session is active
+        # The router accesses relationships immediately, so session should still be open
+        return list(session.exec(select(Visitor).order_by(Visitor.created_at.desc())).all())
