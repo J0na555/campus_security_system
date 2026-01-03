@@ -7,21 +7,22 @@ from app.models.fail_attempt import FailAttempt
 from app.models.enums import ViolationTypeEnum, SubjectTypeEnum
 from app.utils.ids import generate_violation_id
 from app.utils.subjects import get_subject_name, link_subject
+from app.services.alert_service import alert_service
 
 class FaceMatchService:
     THRESHOLD = 0.75
 
     @staticmethod
-    def verify(session: Session, subject_id: str, subject_type: str, gate_id: str, scan_timestamp: datetime):
+    async def verify(session: Session, subject_id: str, subject_type: str, gate_id: str, scan_timestamp: datetime):
         confidence = random.uniform(0.3, 0.98)
         if confidence >= FaceMatchService.THRESHOLD:
             return {"verified": True, "confidence": round(confidence, 2), 
                     "accessGranted": True, "message": "Face verification successful"}
         
-        return FaceMatchService._handle_failure(session, subject_id, subject_type, gate_id, scan_timestamp, confidence)
+        return await FaceMatchService._handle_failure(session, subject_id, subject_type, gate_id, scan_timestamp, confidence)
 
     @staticmethod
-    def _handle_failure(session: Session, subject_id: str, subject_type: str, gate_id: str, scan_timestamp: datetime, confidence: float):
+    async def _handle_failure(session: Session, subject_id: str, subject_type: str, gate_id: str, scan_timestamp: datetime, confidence: float):
         five_mins_ago = datetime.utcnow() - timedelta(minutes=5)
         name = get_subject_name(session, subject_id, subject_type)
         recent = FaceMatchService._get_recent_fails(session, subject_id, subject_type, gate_id, five_mins_ago)
@@ -38,6 +39,15 @@ class FaceMatchService:
         link_subject(f, subject_id, subject_type)
         session.add(f)
         session.commit()
+        
+        await alert_service.broadcast_violation({
+            "id": v_id,
+            "type": v_type.value,
+            "gateId": gate_id,
+            "subjectType": subject_type,
+            "subjectId": subject_id,
+            "confidence": round(confidence, 2)
+        })
         
         res = {"verified": False, "accessGranted": False, "violationType": v_type.value, "message": "Verification failure", "violationId": v_id, "subjectPersisted": True, "subject": {"id": subject_id, "name": name, "type": subject_type}}
         if count >= 3:

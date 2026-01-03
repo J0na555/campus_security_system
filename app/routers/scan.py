@@ -27,5 +27,5 @@ async def scan_qr(scan_data: QRScanRequest, session: Session = Depends(get_sessi
 
 @router.post("/face/verify", response_model=SuccessResponse)
 async def verify_face(verify_data: FaceVerifyRequest, session: Session = Depends(get_session)):
-    res = FaceMatchService.verify(session, verify_data.subjectId, verify_data.subjectType, verify_data.gateId, verify_data.scanTimestamp)
+    res = await FaceMatchService.verify(session, verify_data.subjectId, verify_data.subjectType, verify_data.gateId, verify_data.scanTimestamp)
     return {"status": "success", "data": res}
