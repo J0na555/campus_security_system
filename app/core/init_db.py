@@ -6,6 +6,7 @@ from app.utils.sample_data import (
 from app.utils.sample_data_subjects import (
     create_students, create_staff_members, create_vehicles
 )
+from app.utils.mock_data import populate_mock_data
 
 def init_db():
     with Session(engine) as session:
@@ -27,7 +28,11 @@ def init_db():
         staff = create_security_staff(session)
         students = create_students(session, departments)
         staff_members = create_staff_members(session, departments)
-        create_vehicles(session, students, staff_members)
+        vehicles = create_vehicles(session, students, staff_members)
         
         session.commit()
+        
+        # Populate comprehensive mock data for frontend testing
+        populate_mock_data(session, students, staff_members, vehicles, gates, staff)
+        
         print("Database initialized successfully!")

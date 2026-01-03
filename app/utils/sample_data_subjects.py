@@ -14,7 +14,16 @@ def create_students(session: Session, departments):
                 department_id=departments[0].id, qr_code="QR-STU-2024-ABC123XYZ"),
         Student(id="stu_456abc", name="Bob Williams", 
                 email="bob.williams@student.campus.edu",
-                department_id=departments[1].id, qr_code="QR-STU-2024-DEF456ABC")
+                department_id=departments[1].id, qr_code="QR-STU-2024-DEF456ABC"),
+        Student(id="stu_111aaa", name="Charlie Davis", 
+                email="charlie.davis@student.campus.edu",
+                department_id=departments[0].id, qr_code="QR-STU-2024-GHI789XYZ"),
+        Student(id="stu_222bbb", name="Diana Martinez", 
+                email="diana.martinez@student.campus.edu",
+                department_id=departments[2].id, qr_code="QR-STU-2024-JKL012ABC"),
+        Student(id="stu_333ccc", name="Ethan Wilson", 
+                email="ethan.wilson@student.campus.edu",
+                department_id=departments[1].id, qr_code="QR-STU-2024-MNO345DEF")
     ]
     for student in students:
         session.add(student)
@@ -27,7 +36,13 @@ def create_staff_members(session: Session, departments):
                     position="Professor", qr_code="QR-STF-2024-XYZ789ABC"),
         StaffMember(id="stf_789xyz", name="Jane Doe", 
                     email="jane.doe@campus.edu", department_id=departments[3].id,
-                    position="HR Manager", qr_code="QR-STF-2024-JKL012DEF")
+                    position="HR Manager", qr_code="QR-STF-2024-JKL012DEF"),
+        StaffMember(id="stf_111aaa", name="Dr. Sarah Thompson", 
+                    email="sarah.thompson@campus.edu", department_id=departments[0].id,
+                    position="Associate Professor", qr_code="QR-STF-2024-PQR678GHI"),
+        StaffMember(id="stf_222bbb", name="Mark Johnson", 
+                    email="mark.johnson@campus.edu", department_id=departments[2].id,
+                    position="Department Head", qr_code="QR-STF-2024-STU901JKL")
     ]
     for staff in staff_members:
         session.add(staff)

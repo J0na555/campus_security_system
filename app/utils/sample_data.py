@@ -57,6 +57,21 @@ def create_security_staff(session: Session):
             id="usr_ghi789", employee_id="EMP-2024-003", name="Michael Chen",
             email="michael.chen@campus.edu", password_hash=pwd_context.hash("password123"),
             role=UserRoleEnum.ADMIN
+        ),
+        SecurityStaff(
+            id="usr_admin001", employee_id="ADMIN-001", name="Admin User",
+            email="admin@campus.edu", password_hash=pwd_context.hash("admin123"),
+            role=UserRoleEnum.ADMIN, department="IT Administration"
+        ),
+        SecurityStaff(
+            id="usr_admin002", employee_id="ADMIN-002", name="Super Admin",
+            email="superadmin@campus.edu", password_hash=pwd_context.hash("admin123"),
+            role=UserRoleEnum.ADMIN, department="System Administration"
+        ),
+        SecurityStaff(
+            id="usr_super001", employee_id="SUPER-001", name="Supervisor One",
+            email="supervisor1@campus.edu", password_hash=pwd_context.hash("super123"),
+            role=UserRoleEnum.SECURITY_SUPERVISOR
         )
     ]
     for s in staff:
