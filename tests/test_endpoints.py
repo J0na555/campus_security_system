@@ -334,3 +334,65 @@ def test_websocket_expired_visitor_broadcast(client, session):
         assert message["type"] == "violation_alert"
         assert message["data"]["type"] == "expired_visitor_qr_code"
         assert message["data"]["visitorName"] == "Expired Visitor"
+
+def test_student_photo_enrollment(client, auth_token, session):
+    """Test enrolling a student's photo for face verification"""
+    from app.models.student import Student
+    
+    # Get a student from the database
+    student = session.exec(select(Student)).first()
+    assert student is not None
+    
+    # Minimal valid base64 encoded 1x1 pixel JPEG image for testing
+    test_photo_base64 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA/d"
+    
+    # Enroll the photo
+    response = client.post(
+        "/api/v1/students/enroll-photo",
+        json={
+            "studentId": student.id,
+            "photo": test_photo_base64
+        },
+        headers={"Authorization": f"Bearer {auth_token}"}
+    )
+    
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert response.json()["data"]["studentId"] == student.id
+    assert "photoUrl" in response.json()["data"]
+    assert response.json()["data"]["photoUrl"] is not None
+    
+    # Verify the student record was updated
+    session.refresh(student)
+    assert student.photo_url is not None
+    assert student.photo_url == response.json()["data"]["photoUrl"]
+
+def test_student_photo_enrollment_invalid_student(client, auth_token):
+    """Test enrolling photo for non-existent student"""
+    test_photo_base64 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA/d"
+    
+    response = client.post(
+        "/api/v1/students/enroll-photo",
+        json={
+            "studentId": "non-existent-student-id",
+            "photo": test_photo_base64
+        },
+        headers={"Authorization": f"Bearer {auth_token}"}
+    )
+    
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]["message"].lower()
+
+def test_student_photo_enrollment_no_auth(client):
+    """Test enrolling photo without authentication"""
+    test_photo_base64 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA/d"
+    
+    response = client.post(
+        "/api/v1/students/enroll-photo",
+        json={
+            "studentId": "stu_789xyz",
+            "photo": test_photo_base64
+        }
+    )
+    
+    assert response.status_code == 403
