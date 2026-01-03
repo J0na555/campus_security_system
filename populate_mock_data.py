@@ -11,7 +11,7 @@ This script will:
 - Add violations for dashboard testing
 - Add vehicle entries and alerts
 
-Admin Login Credentials:
+Admin Login Credentials:admin123
 - Employee ID: ADMIN-001, Password: admin123
 - Employee ID: ADMIN-002, Password: admin123
 - Employee ID: EMP-2024-003, Password: password123
