@@ -1,47 +1,41 @@
 import os
 import base64
-import hashlib
+import secrets
 from datetime import datetime
 from typing import Optional
 from sqlmodel import Session, select
 from fastapi import HTTPException
 from app.models.student import Student
-from app.core.config import settings
+from app.models.department import Department
+from app.models.enums import EnrollmentStatusEnum
 
 class StudentService:
-    # Directory to store student photos
     PHOTO_DIR = "student_photos"
     
     @staticmethod
     def _ensure_photo_directory():
-        """Ensure the photo storage directory exists"""
         if not os.path.exists(StudentService.PHOTO_DIR):
             os.makedirs(StudentService.PHOTO_DIR)
     
     @staticmethod
-    def _decode_base64_image(base64_string: str) -> tuple[bytes, str]:
-        """
-        Decode base64 image string and return image bytes and extension
-        
-        Args:
-            base64_string: Base64 encoded image (with or without data URI prefix)
-            
-        Returns:
-            tuple: (image_bytes, file_extension)
-        """
+    def _generate_student_id() -> str:
+        return f"stu_{secrets.token_hex(4)}"
+    
+    @staticmethod
+    def _generate_qr_code(student_id: str) -> str:
+        unique_part = secrets.token_hex(6).upper()
+        return f"QR-STU-{datetime.utcnow().year}-{unique_part}"
+    
+    @staticmethod
+    def _decode_base64_image(base64_string: str) -> tuple:
         try:
-            # Remove data URI prefix if present (e.g., "data:image/jpeg;base64,")
             if base64_string.startswith('data:'):
-                # Extract the image type and base64 data
                 header, encoded = base64_string.split(',', 1)
-                # Extract image format from header (e.g., "image/jpeg" -> "jpeg")
                 image_type = header.split(';')[0].split('/')[1]
                 extension = image_type if image_type in ['jpg', 'jpeg', 'png', 'gif'] else 'jpg'
             else:
                 encoded = base64_string
-                extension = 'jpg'  # default extension
-            
-            # Decode base64 string
+                extension = 'jpg'
             image_bytes = base64.b64decode(encoded)
             return image_bytes, extension
         except Exception as e:
@@ -49,65 +43,148 @@ class StudentService:
     
     @staticmethod
     def _save_image_file(image_bytes: bytes, student_id: str, extension: str) -> str:
-        """
-        Save image bytes to file and return the file path/URL
-        
-        Args:
-            image_bytes: Raw image bytes
-            student_id: Student ID for naming the file
-            extension: File extension (jpg, png, etc.)
-            
-        Returns:
-            str: Photo URL/path
-        """
         StudentService._ensure_photo_directory()
-        
-        # Generate a unique filename using student_id and timestamp
         timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         filename = f"{student_id}_{timestamp}.{extension}"
         filepath = os.path.join(StudentService.PHOTO_DIR, filename)
-        
-        # Write image bytes to file
         with open(filepath, 'wb') as f:
             f.write(image_bytes)
-        
-        # In production, this would be a CDN URL
-        # For now, return a relative path that could be served by the backend
         photo_url = f"https://cdn.campus-security.example.com/photos/{filename}"
-        
         return photo_url
     
     @staticmethod
-    def enroll_photo(session: Session, student_id: str, photo_base64: str) -> dict:
-        """
-        Enroll or update a student's photo for face verification
+    def create_student(session: Session, data: dict) -> dict:
+        existing = session.exec(select(Student).where(Student.email == data.get('email'))).first()
+        if existing:
+            raise HTTPException(status_code=400, detail={"status": "error", "code": "EMAIL_EXISTS", "message": "A student with this email already exists"})
         
-        Args:
-            session: Database session
-            student_id: Student ID
-            photo_base64: Base64 encoded photo string
-            
-        Returns:
-            dict: Response data with studentId and photoUrl
-            
-        Raises:
-            HTTPException: If student not found or invalid image
-        """
-        # Verify student exists
+        department = None
+        if data.get('departmentId'):
+            department = session.exec(select(Department).where(Department.id == data['departmentId'])).first()
+            if not department:
+                raise HTTPException(status_code=404, detail={"status": "error", "code": "DEPARTMENT_NOT_FOUND", "message": "Department not found"})
+        
+        student_id = StudentService._generate_student_id()
+        qr_code = data.get('qrCode') or StudentService._generate_qr_code(student_id)
+        
+        existing_qr = session.exec(select(Student).where(Student.qr_code == qr_code)).first()
+        if existing_qr:
+            raise HTTPException(status_code=400, detail={"status": "error", "code": "QR_CODE_EXISTS", "message": "This QR code is already in use"})
+        
+        photo_url = None
+        if data.get('photo'):
+            image_bytes, extension = StudentService._decode_base64_image(data['photo'])
+            photo_url = StudentService._save_image_file(image_bytes, student_id, extension)
+        
+        student = Student(
+            id=student_id,
+            name=data['name'],
+            email=data['email'],
+            photo_url=photo_url,
+            department_id=data.get('departmentId'),
+            qr_code=qr_code,
+            enrollment_status=EnrollmentStatusEnum.ACTIVE
+        )
+        
+        session.add(student)
+        session.commit()
+        session.refresh(student)
+        
+        return StudentService._format_student_response(student, department)
+    
+    @staticmethod
+    def get_students(session: Session, page: int = 1, limit: int = 20) -> dict:
+        offset = (page - 1) * limit
+        total_query = select(Student)
+        total_count = len(session.exec(total_query).all())
+        query = select(Student).offset(offset).limit(limit)
+        students = session.exec(query).all()
+        
+        students_data = []
+        for student in students:
+            department = None
+            if student.department_id:
+                department = session.exec(select(Department).where(Department.id == student.department_id)).first()
+            students_data.append(StudentService._format_student_response(student, department))
+        
+        return {
+            "students": students_data,
+            "pagination": {
+                "currentPage": page,
+                "totalPages": (total_count + limit - 1) // limit,
+                "totalItems": total_count,
+                "itemsPerPage": limit,
+                "hasNextPage": offset + limit < total_count,
+                "hasPreviousPage": page > 1
+            }
+        }
+    
+    @staticmethod
+    def get_student(session: Session, student_id: str) -> dict:
         student = session.exec(select(Student).where(Student.id == student_id)).first()
         if not student:
-            raise HTTPException(
-                status_code=404, 
-                detail={"status": "error", "code": "STUDENT_NOT_FOUND", "message": f"Student with ID '{student_id}' not found"}
-            )
+            raise HTTPException(status_code=404, detail={"status": "error", "code": "STUDENT_NOT_FOUND", "message": f"Student with ID '{student_id}' not found"})
         
-        # Decode and validate base64 image
+        department = None
+        if student.department_id:
+            department = session.exec(select(Department).where(Department.id == student.department_id)).first()
+        
+        return StudentService._format_student_response(student, department)
+    
+    @staticmethod
+    def update_student(session: Session, student_id: str, data: dict) -> dict:
+        student = session.exec(select(Student).where(Student.id == student_id)).first()
+        if not student:
+            raise HTTPException(status_code=404, detail={"status": "error", "code": "STUDENT_NOT_FOUND", "message": f"Student with ID '{student_id}' not found"})
+        
+        if data.get('name'):
+            student.name = data['name']
+        
+        if data.get('email'):
+            existing = session.exec(select(Student).where(Student.email == data['email'], Student.id != student_id)).first()
+            if existing:
+                raise HTTPException(status_code=400, detail={"status": "error", "code": "EMAIL_EXISTS", "message": "A student with this email already exists"})
+            student.email = data['email']
+        
+        if data.get('departmentId') is not None:
+            if data['departmentId']:
+                department = session.exec(select(Department).where(Department.id == data['departmentId'])).first()
+                if not department:
+                    raise HTTPException(status_code=404, detail={"status": "error", "code": "DEPARTMENT_NOT_FOUND", "message": "Department not found"})
+            student.department_id = data['departmentId']
+        
+        if data.get('qrCode'):
+            existing_qr = session.exec(select(Student).where(Student.qr_code == data['qrCode'], Student.id != student_id)).first()
+            if existing_qr:
+                raise HTTPException(status_code=400, detail={"status": "error", "code": "QR_CODE_EXISTS", "message": "This QR code is already in use"})
+            student.qr_code = data['qrCode']
+        
+        if data.get('enrollmentStatus'):
+            try:
+                student.enrollment_status = EnrollmentStatusEnum(data['enrollmentStatus'])
+            except ValueError:
+                raise HTTPException(status_code=400, detail={"status": "error", "code": "INVALID_STATUS", "message": "Invalid enrollment status"})
+        
+        student.updated_at = datetime.utcnow()
+        session.add(student)
+        session.commit()
+        session.refresh(student)
+        
+        department = None
+        if student.department_id:
+            department = session.exec(select(Department).where(Department.id == student.department_id)).first()
+        
+        return StudentService._format_student_response(student, department)
+    
+    @staticmethod
+    def enroll_photo(session: Session, student_id: str, photo_base64: str) -> dict:
+        student = session.exec(select(Student).where(Student.id == student_id)).first()
+        if not student:
+            raise HTTPException(status_code=404, detail={"status": "error", "code": "STUDENT_NOT_FOUND", "message": f"Student with ID '{student_id}' not found"})
+        
         image_bytes, extension = StudentService._decode_base64_image(photo_base64)
-        
-        # Save image file and get URL
         photo_url = StudentService._save_image_file(image_bytes, student_id, extension)
         
-        # Update student record with new photo URL
         student.photo_url = photo_url
         student.updated_at = datetime.utcnow()
         session.add(student)
@@ -120,18 +197,17 @@ class StudentService:
         }
     
     @staticmethod
-    def get_student_photo(session: Session, student_id: str) -> Optional[str]:
-        """
-        Get the enrolled photo URL for a student
-        
-        Args:
-            session: Database session
-            student_id: Student ID
-            
-        Returns:
-            Optional[str]: Photo URL if exists, None otherwise
-        """
-        student = session.exec(select(Student).where(Student.id == student_id)).first()
-        if student:
-            return student.photo_url
-        return None
+    def _format_student_response(student: Student, department: Optional[Department] = None) -> dict:
+        return {
+            "id": student.id,
+            "name": student.name,
+            "email": student.email,
+            "photoUrl": student.photo_url,
+            "departmentId": student.department_id,
+            "department": department.name if department else None,
+            "enrollmentStatus": student.enrollment_status.value,
+            "qrCode": student.qr_code,
+            "enrolledAt": student.enrolled_at,
+            "createdAt": student.created_at,
+            "updatedAt": student.updated_at
+        }
