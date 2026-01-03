@@ -19,7 +19,7 @@ async def scan_qr(scan_data: QRScanRequest, session: Session = Depends(get_sessi
     res = QRService.check_staff(session, scan_data.qrCode)
     if res: return {"status": "success", "data": res}
     
-    res = VisitorQRService.check_visitor(session, scan_data.qrCode, scan_data.gateId, scan_data.scanTimestamp)
+    res = await VisitorQRService.check_visitor(session, scan_data.qrCode, scan_data.gateId, scan_data.scanTimestamp)
     if res: return {"status": "success", "data": res}
     
     res = await QRService.handle_unauthorized_qr(session, scan_data.qrCode, scan_data.gateId, scan_data.scanTimestamp)

@@ -5,17 +5,18 @@ from app.models.visitor import Visitor
 from app.models.violation import Violation
 from app.models.enums import ViolationTypeEnum, SubjectTypeEnum
 from app.utils.ids import generate_violation_id
+from app.services.alert_service import alert_service
 
 class VisitorQRService:
     @staticmethod
-    def check_visitor(session: Session, qr_code: str, gate_id: str, scan_timestamp: datetime):
+    async def check_visitor(session: Session, qr_code: str, gate_id: str, scan_timestamp: datetime):
         statement = select(Visitor).where(Visitor.qr_code == qr_code)
         visitor = session.exec(statement).first()
         if not visitor: return None
         
         current_time = datetime.utcnow()
         if current_time > visitor.valid_until:
-            return VisitorQRService._handle_expired_visitor(session, visitor, gate_id, scan_timestamp)
+            return await VisitorQRService._handle_expired_visitor(session, visitor, gate_id, scan_timestamp)
         
         if current_time < visitor.valid_from:
             return {"valid": False, "accessGranted": False, "subjectType": "visitor",
@@ -40,7 +41,7 @@ class VisitorQRService:
         }
 
     @staticmethod
-    def _handle_expired_visitor(session: Session, visitor: Visitor, gate_id: str, scan_timestamp: datetime):
+    async def _handle_expired_visitor(session: Session, visitor: Visitor, gate_id: str, scan_timestamp: datetime):
         violation_id = generate_violation_id()
         violation = Violation(
             id=violation_id, type=ViolationTypeEnum.EXPIRED_VISITOR_QR_CODE,
@@ -51,6 +52,18 @@ class VisitorQRService:
         )
         session.add(violation)
         session.commit()
+        
+        try:
+            await alert_service.broadcast_violation({
+                "id": violation_id,
+                "type": "expired_visitor_qr_code",
+                "gateId": gate_id,
+                "visitorId": visitor.id,
+                "visitorName": visitor.name
+            })
+        except Exception:
+            pass  # Don't break flow if broadcast fails
+        
         return {
             "valid": False, "accessGranted": False, "violationType": "expired_visitor_qr_code",
             "message": "Visitor pass has expired", "violationId": violation_id,
