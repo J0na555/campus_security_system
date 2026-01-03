@@ -9,6 +9,7 @@ from app.models.violation import Violation
 from app.models.enums import ViolationTypeEnum
 from app.utils.ids import generate_violation_id
 from app.services.visitor_qr_service import VisitorQRService
+from app.services.alert_service import alert_service
 
 class QRService:
     @staticmethod
@@ -51,7 +52,7 @@ class QRService:
         return None
 
     @staticmethod
-    def handle_unauthorized_qr(session: Session, qr_code: str, gate_id: str, scan_timestamp: datetime):
+    async def handle_unauthorized_qr(session: Session, qr_code: str, gate_id: str, scan_timestamp: datetime):
         violation_id = generate_violation_id()
         violation = Violation(
             id=violation_id, type=ViolationTypeEnum.UNAUTHORIZED_QR_SCAN,
@@ -60,5 +61,13 @@ class QRService:
         )
         session.add(violation)
         session.commit()
+        
+        await alert_service.broadcast_violation({
+            "id": violation_id,
+            "type": "unauthorized_qr_scan",
+            "gateId": gate_id,
+            "scannedQrCode": qr_code
+        })
+        
         return {"valid": False, "accessGranted": False, "violationType": "unauthorized_qr_scan",
                 "message": "Invalid or tampered QR code", "violationId": violation_id, "subjectPersisted": False}
