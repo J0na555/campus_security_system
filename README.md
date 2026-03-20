@@ -1,5 +1,17 @@
 # Campus Security System - Backend
 
+This project was built during a hackathon with a team of 5.
+
+My Contribution:
+ -Developed frontend UI components using React
+ -Implemented features for log filtering, search, and reset functionality
+ -Integrated frontend with backend APIs for data flow
+ -Improved backend Student model (UUID and timestamp handling)
+
+Original repositories:
+Frontend: https://github.com/Abela16/University-Security-System
+Backend: https://github.com/Abela16/campus_security_system
+
 FastAPI + SQLite backend for campus gate security management with QR scanning, face verification, and **vehicle tracking**.
 
 ## Features
