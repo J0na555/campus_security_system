@@ -58,3 +58,7 @@ htmlcov/
 uploads/
 captured_images/
 qr_codes/
+
+# Docs
+*.md
+!README.md
